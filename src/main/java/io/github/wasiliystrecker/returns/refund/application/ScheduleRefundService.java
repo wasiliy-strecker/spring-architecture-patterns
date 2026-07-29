@@ -5,6 +5,7 @@ import io.github.wasiliystrecker.returns.refund.events.RefundScheduled;
 import io.github.wasiliystrecker.returns.resolution.events.ReturnApproved;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -33,7 +34,7 @@ public final class ScheduleRefundService {
     }
 
     UUID refundId = identifiers.next();
-    Instant scheduledAt = clock.instant();
+    Instant scheduledAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
     RefundPayment refund =
         RefundPayment.schedule(
             refundId,

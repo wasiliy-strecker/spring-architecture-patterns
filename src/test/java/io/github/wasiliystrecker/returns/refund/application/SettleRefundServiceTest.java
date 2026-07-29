@@ -10,6 +10,7 @@ import io.github.wasiliystrecker.returns.refund.events.RefundEvent;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -25,7 +26,8 @@ class SettleRefundServiceTest {
   private static final UUID COMPLETED_EVENT_ID =
       UUID.fromString("5413aa62-65ff-41b3-8799-08a6eaf95355");
   private static final Instant SCHEDULED_AT = Instant.parse("2026-07-29T10:00:00Z");
-  private static final Instant SETTLED_AT = Instant.parse("2026-07-29T11:00:00Z");
+  private static final Instant CLOCK_INSTANT = Instant.parse("2026-07-29T11:00:00.123456789Z");
+  private static final Instant SETTLED_AT = CLOCK_INSTANT.truncatedTo(ChronoUnit.MICROS);
 
   @Test
   void recordsSettlementAndPublishesCompletion() {
@@ -61,7 +63,7 @@ class SettleRefundServiceTest {
         events::add,
         new DirectTransactionRunner(),
         () -> COMPLETED_EVENT_ID,
-        Clock.fixed(SETTLED_AT, ZoneOffset.UTC));
+        Clock.fixed(CLOCK_INSTANT, ZoneOffset.UTC));
   }
 
   private static RefundPayment scheduled() {

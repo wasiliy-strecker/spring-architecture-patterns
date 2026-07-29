@@ -9,6 +9,7 @@ import io.github.wasiliystrecker.returns.refund.domain.RefundStatus;
 import io.github.wasiliystrecker.returns.refund.events.RefundCompleted;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 
 /** Records provider settlement acknowledgements without coupling the core to a payment SDK. */
@@ -44,7 +45,7 @@ public final class SettleRefundService implements RefundOperations {
         refunds
             .findByReturnId(command.returnId())
             .orElseThrow(() -> new RefundNotFoundException(command.returnId()));
-    Instant settledAt = clock.instant();
+    Instant settledAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
     RefundPayment settled = current.settle(command.providerReference(), settledAt);
     if (current.status() == RefundStatus.COMPLETED) {
       return receipt(current);
