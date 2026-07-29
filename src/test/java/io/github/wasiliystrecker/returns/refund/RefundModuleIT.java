@@ -1,12 +1,12 @@
-package io.github.wasiliystrecker.returns.resolution;
+package io.github.wasiliystrecker.returns.refund;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import io.github.wasiliystrecker.returns.PostgresIntegrationTest;
-import io.github.wasiliystrecker.returns.inspection.events.InspectionCompleted;
+import io.github.wasiliystrecker.returns.refund.events.RefundCompleted;
+import io.github.wasiliystrecker.returns.refund.events.RefundScheduled;
 import io.github.wasiliystrecker.returns.resolution.events.ReturnApproved;
-import io.github.wasiliystrecker.returns.resolution.events.ReturnRejected;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -19,10 +19,10 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 
 @ApplicationModuleTest
-final class ResolutionModuleIT extends PostgresIntegrationTest {
+final class RefundModuleIT extends PostgresIntegrationTest {
   private static final UUID RETURN_ID = UUID.fromString("31302ff9-9661-42e4-a87b-2126530422f8");
-  private static final Instant COMPLETED_AT = Instant.parse("2026-07-29T09:00:00Z");
 
+  @Autowired private RefundOperations refundOperations;
   @Autowired private JdbcTemplate jdbcTemplate;
 
   @BeforeEach
@@ -36,11 +36,17 @@ final class ResolutionModuleIT extends PostgresIntegrationTest {
   }
 
   @Test
-  void approvesAnAcceptedInspection(Scenario scenario) {
+  void schedulesAndSettlesOneApprovedRefund(Scenario scenario) {
     scenario
-        .publish(inspectionCompleted("ACCEPTED"))
+        .publish(
+            new ReturnApproved(
+                UUID.fromString("c799f702-c615-4297-9e84-c9fe61808b41"),
+                RETURN_ID,
+                12_500,
+                "EUR",
+                Instant.parse("2026-07-29T09:00:00Z")))
         .andWaitAtMost(Duration.ofSeconds(10))
-        .andWaitForEventOfType(ReturnApproved.class)
+        .andWaitForEventOfType(RefundScheduled.class)
         .matching(event -> event.returnId().equals(RETURN_ID))
         .toArriveAndVerify(
             event -> {
@@ -52,45 +58,36 @@ final class ResolutionModuleIT extends PostgresIntegrationTest {
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () ->
-                assertThat(resolutionRow())
-                    .containsEntry("status", "APPROVED")
-                    .containsEntry("refund_minor_units", 12_500L)
-                    .containsEntry("rejection_reason", null));
-  }
+                assertThat(refundRow())
+                    .containsEntry("status", "SCHEDULED")
+                    .containsEntry("version", 0L));
 
-  @Test
-  void rejectsAFailedInspectionWithAStableReason(Scenario scenario) {
     scenario
-        .publish(inspectionCompleted("REJECTED"))
+        .stimulate(() -> refundOperations.settle(new SettleRefundCommand(RETURN_ID, "PSP-84729")))
         .andWaitAtMost(Duration.ofSeconds(10))
-        .andWaitForEventOfType(ReturnRejected.class)
+        .andWaitForEventOfType(RefundCompleted.class)
         .matching(event -> event.returnId().equals(RETURN_ID))
-        .toArriveAndVerify(event -> assertThat(event.reason()).isEqualTo("INSPECTION_FAILED"));
+        .toArriveAndVerify(
+            (event, receipt) -> {
+              assertThat(event.providerReference()).isEqualTo("PSP-84729");
+              assertThat(receipt.status()).isEqualTo("COMPLETED");
+            });
 
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
             () ->
-                assertThat(resolutionRow())
-                    .containsEntry("status", "REJECTED")
-                    .containsEntry("rejection_reason", "INSPECTION_FAILED"));
+                assertThat(refundRow())
+                    .containsEntry("status", "COMPLETED")
+                    .containsEntry("provider_reference", "PSP-84729")
+                    .containsEntry("version", 1L));
   }
 
-  private InspectionCompleted inspectionCompleted(String outcome) {
-    return new InspectionCompleted(
-        UUID.fromString("a249b0c0-ae77-4847-87b4-9af5428215bb"),
-        RETURN_ID,
-        outcome,
-        12_500,
-        "EUR",
-        COMPLETED_AT);
-  }
-
-  private Map<String, Object> resolutionRow() {
+  private Map<String, Object> refundRow() {
     return jdbcTemplate.queryForMap(
         """
-        SELECT status, refund_minor_units, rejection_reason
-          FROM return_resolution
+        SELECT status, provider_reference, refund_minor_units, version
+          FROM refund_payment
          WHERE return_id = ?
         """,
         RETURN_ID);

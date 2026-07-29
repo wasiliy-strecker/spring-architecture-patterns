@@ -10,6 +10,10 @@ import io.github.wasiliystrecker.returns.inspection.InspectionWork;
 import io.github.wasiliystrecker.returns.intake.RequestReturnCommand;
 import io.github.wasiliystrecker.returns.intake.ReturnIntake;
 import io.github.wasiliystrecker.returns.intake.events.ReturnRequested;
+import io.github.wasiliystrecker.returns.query.ReturnCaseQueries;
+import io.github.wasiliystrecker.returns.query.ReturnCaseView;
+import io.github.wasiliystrecker.returns.refund.RefundOperations;
+import io.github.wasiliystrecker.returns.refund.SettleRefundCommand;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -27,6 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 final class ReturnWorkflowIT extends PostgresIntegrationTest {
   @Autowired private ReturnIntake returnIntake;
   @Autowired private InspectionWork inspectionWork;
+  @Autowired private RefundOperations refundOperations;
+  @Autowired private ReturnCaseQueries returnCaseQueries;
   @Autowired private ApplicationEventPublisher eventPublisher;
   @Autowired private PlatformTransactionManager transactionManager;
   @Autowired private JdbcTemplate jdbcTemplate;
@@ -34,7 +40,11 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
   @BeforeEach
   void clearWorkflowState() {
     jdbcTemplate.update(
-        "TRUNCATE TABLE event_publication, return_resolution, inspection_case, return_request");
+        """
+        TRUNCATE TABLE event_publication, return_case_projection_event,
+            return_case_view, refund_payment, return_resolution,
+            inspection_case, return_request
+        """);
   }
 
   @Test
@@ -73,9 +83,49 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
+            () ->
+                assertThat(refundRow(receipt.returnId()))
+                    .containsEntry("status", "SCHEDULED")
+                    .containsEntry("refund_minor_units", 18_900L));
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(returnCase(receipt.returnId()))
+                    .get()
+                    .extracting(ReturnCaseView::status)
+                    .isEqualTo("REFUND_SCHEDULED"));
+
+    var refundReceipt =
+        refundOperations.settle(new SettleRefundCommand(receipt.returnId(), "PSP-ORDER-3003"));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(returnCase(receipt.returnId()))
+                    .get()
+                    .satisfies(
+                        view -> {
+                          assertThat(view.status()).isEqualTo("REFUNDED");
+                          assertThat(view.refundId()).isEqualTo(refundReceipt.refundId());
+                          assertThat(view.refundStatus()).isEqualTo("COMPLETED");
+                        }));
+    assertThat(refundRow(receipt.returnId()))
+        .containsEntry("status", "COMPLETED")
+        .containsEntry("provider_reference", "PSP-ORDER-3003")
+        .containsEntry("version", 1L);
+
+    assertThat(
+            refundOperations.settle(new SettleRefundCommand(receipt.returnId(), "PSP-ORDER-3003")))
+        .isEqualTo(refundReceipt);
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
             () -> {
-              assertThat(publicationCount()).isEqualTo(2);
-              assertThat(completedPublicationCount()).isEqualTo(2);
+              assertThat(publicationCount()).isEqualTo(8);
+              assertThat(completedPublicationCount()).isEqualTo(8);
             });
 
     assertThat(inspectionRow(receipt.returnId()))
@@ -126,9 +176,20 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
     await()
         .atMost(Duration.ofSeconds(10))
         .untilAsserted(
+            () ->
+                assertThat(returnCase(returnId))
+                    .get()
+                    .satisfies(
+                        view -> {
+                          assertThat(view.status()).isEqualTo("REQUESTED");
+                          assertThat(view.orderReference()).isEqualTo("ORDER-REPLAY");
+                        }));
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
             () -> {
-              assertThat(publicationCount()).isEqualTo(2);
-              assertThat(completedPublicationCount()).isEqualTo(2);
+              assertThat(publicationCount()).isEqualTo(4);
+              assertThat(completedPublicationCount()).isEqualTo(4);
             });
   }
 
@@ -150,6 +211,20 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
          WHERE return_id = ?
         """,
         returnId);
+  }
+
+  private Map<String, Object> refundRow(UUID returnId) {
+    return jdbcTemplate.queryForMap(
+        """
+        SELECT status, refund_minor_units, provider_reference, version
+          FROM refund_payment
+         WHERE return_id = ?
+        """,
+        returnId);
+  }
+
+  private java.util.Optional<ReturnCaseView> returnCase(UUID returnId) {
+    return returnCaseQueries.findById(returnId);
   }
 
   private int inspectionCount(UUID returnId) {

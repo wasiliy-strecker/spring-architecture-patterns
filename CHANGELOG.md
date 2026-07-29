@@ -21,3 +21,6 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Deterministic approval and rejection policy with stable module event contracts
 - Durable Spring Modulith JDBC event publications and idempotent PostgreSQL consumers
 - Isolated module scenarios and an end-to-end asynchronous workflow test
+- Durable refund scheduling and idempotent provider settlement acknowledgement
+- Monotonic CQRS return-case projection with a processed-event ledger
+- Reverse-order event scenarios and full workflow-to-read-model integration coverage
