@@ -17,11 +17,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 class IntakeConfiguration {
 
   @Bean
-  Clock returnWorkflowClock() {
-    return Clock.systemUTC();
-  }
-
-  @Bean
   IdentifierGenerator returnIdentifierGenerator() {
     return UUID::randomUUID;
   }
