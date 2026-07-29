@@ -24,9 +24,9 @@ flowchart LR
     F -->|events| Q
 ```
 
-The solid path from `intake` through `inspection` to `resolution` is
-implemented. `refund` and `query` remain deliberately independent until their
-behavior is implemented.
+The complete path from `intake` through `refund` is implemented. `query`
+subscribes independently to every public event and builds the read side without
+introducing synchronous dependencies back into the write modules.
 
 ## Internal dependency rule
 
@@ -97,6 +97,37 @@ atomic instead of relying on a race-prone read-before-write check.
 reason `INSPECTION_FAILED`. It knows nothing about events, Spring, or
 persistence.
 
+## Refund and query slices
+
+```mermaid
+flowchart LR
+    RA[ReturnApproved] --> SL[ReturnApprovedListener]
+    SL --> SR[ScheduleRefundService]
+    SR --> FP[(refund_payment)]
+    SR --> RS[RefundScheduled]
+    API[RefundOperations] --> SS[SettleRefundService]
+    SS --> FP
+    SS --> RC[RefundCompleted]
+    E[All public workflow events] --> PL[ReturnCaseEventListeners]
+    PL --> PS[ProjectReturnCaseService]
+    PS --> EV[(return_case_projection_event)]
+    PS --> VIEW[(return_case_view)]
+    Q[ReturnCaseQueries] --> VIEW
+```
+
+The refund aggregate distinguishes instruction creation from provider
+settlement. Scheduling is atomic on return and source-event identifiers.
+Settlement stores an immutable provider reference, treats the same
+acknowledgement as an idempotent retry, and uses optimistic locking to reject
+competing rewrites. No database transaction is presented as a guarantee over an
+external payment network.
+
+The query module is a CQRS read side. A processed-event ledger deduplicates
+stable event IDs in the same transaction as the projection update. Sparse
+upserts allow later workflow events to arrive before intake data. A workflow
+rank can advance but never decrease, while missing lower-rank attributes are
+still filled when delayed events arrive.
+
 ## Cross-module contracts
 
 Synchronous collaboration uses a small public facade in the module base package.
@@ -122,9 +153,11 @@ exercises Flyway and Hibernate validation, checks the stored row and event, and
 proves that a failing synchronous event listener rolls back persistence.
 `InspectionModuleIT` and `ResolutionModuleIT` use Spring Modulith's `Scenario`
 API to test each module only through exposed events and APIs.
+`RefundModuleIT` verifies scheduling and provider acknowledgement, while
+`QueryModuleIT` deliberately publishes events in reverse order.
 `ReturnWorkflowIT` verifies the complete asynchronous path, publication
-completion, optimistic version increment, and duplicate event delivery against
-real PostgreSQL.
+completion, optimistic version increments, duplicate delivery, settlement, and
+the final read view against real PostgreSQL.
 
 The generated documents live below `target/spring-modulith-docs` and are not
 versioned; the source of truth remains the code and its verification tests.
@@ -139,10 +172,11 @@ in a new transaction. A successful invocation marks its publication
 resubmission.
 
 The application deliberately claims **at-least-once**, not exactly-once,
-delivery. Events carry stable identifiers, and both implemented consumers are
-idempotent. Automatic replay at startup stays disabled so operators do not
-trigger an unbounded recovery storm; a later operations milestone will expose
-metrics and an explicit resubmission procedure before production deployment.
+delivery. Events carry stable identifiers, write-side consumers use atomic
+uniqueness constraints, and the query side keeps a processed-event ledger.
+Automatic replay at startup stays disabled so operators do not trigger an
+unbounded recovery storm; a later operations milestone will expose metrics and
+an explicit resubmission procedure before production deployment.
 
-The query module will be explicitly eventually consistent. Its projection uses
-a monotonic workflow rank so delayed events cannot move a return case backwards.
+The query API is explicitly eventually consistent. Callers must therefore
+tolerate a short period in which a newly submitted return has no view yet.

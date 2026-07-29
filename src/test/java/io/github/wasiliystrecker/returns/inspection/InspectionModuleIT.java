@@ -26,7 +26,11 @@ final class InspectionModuleIT extends PostgresIntegrationTest {
   @BeforeEach
   void clearModuleState() {
     jdbcTemplate.update(
-        "TRUNCATE TABLE event_publication, return_resolution, inspection_case, return_request");
+        """
+        TRUNCATE TABLE event_publication, return_case_projection_event,
+            return_case_view, refund_payment, return_resolution,
+            inspection_case, return_request
+        """);
   }
 
   @Test

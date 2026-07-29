@@ -12,11 +12,10 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — durable inspection and resolution:** return intake now
-> starts an asynchronous inspection. Completing that inspection once triggers a
-> deterministic approval or rejection, with every listener delivery tracked in
-> PostgreSQL. Refunds and query projections remain explicit roadmap items rather
-> than placeholder implementations.
+> **Current milestone — reliable refund lifecycle and CQRS view:** an approved
+> return now creates one durable refund instruction, provider acknowledgements
+> are recorded idempotently, and every workflow event contributes to a monotonic
+> read model that tolerates delayed delivery.
 
 ## What this project demonstrates
 
@@ -29,6 +28,8 @@ and operational complexity stay low.
 - transactional module events with Spring Modulith's JDBC publication registry
 - idempotent consumers backed by atomic PostgreSQL conflict handling
 - aggregate invariants plus optimistic locking for concurrent completion attempts
+- durable refund scheduling with idempotent provider acknowledgements
+- CQRS projection with event deduplication and monotonic workflow ranks
 - isolated module scenarios that verify collaboration through public events
 - deterministic unit tests plus real PostgreSQL integration tests with Testcontainers
 - generated module diagrams that cannot silently drift from the code
@@ -49,10 +50,9 @@ flowchart LR
     E -. projection .-> Q
 ```
 
-Return intake, warehouse inspection, and deterministic resolution are
-implemented. The remaining reference flow covers refund scheduling and an
-eventually consistent query view. The repository does not claim those later
-features until their milestones are merged.
+The complete domain flow from intake through refund completion is implemented.
+The read side independently projects all workflow events and remains correct
+when those events arrive late or are delivered again.
 
 ## Implemented use cases
 
@@ -73,6 +73,17 @@ InspectionReceipt inspection =
             receipt.returnId(),
             "ACCEPTED",
             "Damage confirmed by warehouse."));
+
+// Called after the asynchronous RefundScheduled instruction is visible.
+RefundReceipt refund =
+    refundOperations.settle(
+        new SettleRefundCommand(
+            receipt.returnId(),
+            "PSP-ORDER-1001"));
+
+// The query API is eventually consistent.
+ReturnCaseView view =
+    returnCaseQueries.findById(receipt.returnId()).orElseThrow();
 ```
 
 The application normalizes and validates the request, rejects a duplicate
@@ -85,20 +96,37 @@ allows one completion transition, and JPA optimistic locking resolves competing
 writes. `ACCEPTED` produces a full-refund `ReturnApproved`; `REJECTED` produces
 `ReturnRejected` with the stable reason `INSPECTION_FAILED`.
 
+An approval asynchronously creates exactly one `RefundScheduled` instruction.
+`RefundOperations` records the acknowledgement from an external payment
+provider and emits `RefundCompleted`. Repeating the same provider reference is
+safe; attempting to rewrite it is rejected. The project deliberately does not
+pretend to transfer real money or hide a payment SDK behind a demo stub.
+
 ```mermaid
 sequenceDiagram
     participant I as intake
     participant R as event_publication
     participant N as inspection
     participant D as resolution
+    participant F as refund
+    participant Q as query
     I->>R: ReturnRequested + listener publication
     R-->>N: transactional delivery
+    R-->>Q: project REQUESTED
     N->>R: InspectionCompleted + listener publication
     R-->>D: transactional delivery
+    R-->>Q: project INSPECTED
     alt ACCEPTED
-        D-->>D: ReturnApproved
+        D->>R: ReturnApproved
+        R-->>F: schedule refund
+        R-->>Q: project APPROVED
+        F->>R: RefundScheduled
+        R-->>Q: project REFUND_SCHEDULED
+        F->>R: RefundCompleted
+        R-->>Q: project REFUNDED
     else REJECTED
-        D-->>D: ReturnRejected
+        D->>R: ReturnRejected
+        R-->>Q: project REJECTED
     end
 ```
 
@@ -109,8 +137,8 @@ sequenceDiagram
 | `intake` | Capture and validate a return request | API and `ReturnRequested` event |
 | `inspection` | Record the physical inspection once | API and `InspectionCompleted` event |
 | `resolution` | Decide approval or rejection | Resolution events |
-| `refund` | Schedule an approved refund | API and refund event |
-| `query` | Build read-optimized return case views | Query API |
+| `refund` | Schedule and settle an approved refund once | API and refund events |
+| `query` | Build monotonic, read-optimized return case views | Query API |
 
 Every module owns its domain, use cases, and adapters. Other modules may use only
 explicitly exposed APIs or named event interfaces.
@@ -146,8 +174,11 @@ planned dependency direction.
    [completion use case](src/main/java/io/github/wasiliystrecker/returns/inspection/application/CompleteInspectionService.java).
 4. Inspect the deterministic
    [resolution policy](src/main/java/io/github/wasiliystrecker/returns/resolution/domain/ResolutionPolicy.java)
-   and atomic persistence adapters.
-5. Finish with the
+   and the idempotent
+   [refund aggregate](src/main/java/io/github/wasiliystrecker/returns/refund/domain/RefundPayment.java).
+5. Review the
+   [monotonic JDBC projection](src/main/java/io/github/wasiliystrecker/returns/query/adapter/persistence/JdbcReturnCaseProjectionRepository.java).
+6. Finish with the
    [cross-module PostgreSQL test](src/test/java/io/github/wasiliystrecker/returns/ReturnWorkflowIT.java)
    and [delivery semantics](docs/architecture.md#delivery-semantics).
 
@@ -210,7 +241,7 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - [x] Executable modular-monolith foundation
 - [x] Return intake and PostgreSQL persistence
 - [x] Inspection and resolution modules
-- [ ] Reliable refund handling and query projections
+- [x] Reliable refund handling and query projections
 - [ ] Secured REST API and operational insight
 - [ ] Container packaging, end-to-end example, and first release
 
