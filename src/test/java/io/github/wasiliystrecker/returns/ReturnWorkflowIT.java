@@ -93,9 +93,9 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
   }
 
   @Test
-  void handlesConcurrentStyleRedeliveryIdempotently() {
+  void handlesCompetingDuplicateEventsIdempotently() {
     UUID returnId = UUID.fromString("32e3788c-8027-4ebd-90dd-de73dbfb6750");
-    ReturnRequested repeatedEvent =
+    ReturnRequested originalEvent =
         new ReturnRequested(
             UUID.fromString("524f0902-0713-489d-8047-7ddfa76e5b61"),
             returnId,
@@ -105,10 +105,20 @@ final class ReturnWorkflowIT extends PostgresIntegrationTest {
             7_500,
             "GBP",
             Instant.parse("2026-07-29T10:00:00Z"));
+    ReturnRequested duplicateEvent =
+        new ReturnRequested(
+            UUID.fromString("419411b1-8f6e-4b11-9407-9207a36af019"),
+            returnId,
+            "ORDER-REPLAY",
+            "LINE-8",
+            "WRONG_ITEM",
+            7_500,
+            "GBP",
+            Instant.parse("2026-07-29T10:00:01Z"));
     TransactionTemplate transactions = new TransactionTemplate(transactionManager);
 
-    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(repeatedEvent));
-    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(repeatedEvent));
+    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(originalEvent));
+    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(duplicateEvent));
 
     await()
         .atMost(Duration.ofSeconds(10))
