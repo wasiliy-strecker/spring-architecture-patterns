@@ -1,0 +1,169 @@
+package io.github.wasiliystrecker.returns;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
+
+import io.github.wasiliystrecker.returns.inspection.CompleteInspectionCommand;
+import io.github.wasiliystrecker.returns.inspection.InspectionAlreadyCompletedException;
+import io.github.wasiliystrecker.returns.inspection.InspectionWork;
+import io.github.wasiliystrecker.returns.intake.RequestReturnCommand;
+import io.github.wasiliystrecker.returns.intake.ReturnIntake;
+import io.github.wasiliystrecker.returns.intake.events.ReturnRequested;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+final class ReturnWorkflowIT extends PostgresIntegrationTest {
+  @Autowired private ReturnIntake returnIntake;
+  @Autowired private InspectionWork inspectionWork;
+  @Autowired private ApplicationEventPublisher eventPublisher;
+  @Autowired private PlatformTransactionManager transactionManager;
+  @Autowired private JdbcTemplate jdbcTemplate;
+
+  @BeforeEach
+  void clearWorkflowState() {
+    jdbcTemplate.update(
+        "TRUNCATE TABLE event_publication, return_resolution, inspection_case, return_request");
+  }
+
+  @Test
+  void runsTheAcceptedPathAcrossDurablyConnectedModules() {
+    var receipt =
+        returnIntake.request(
+            new RequestReturnCommand(
+                "ORDER-3003",
+                "LINE-4",
+                "DAMAGED",
+                "Housing cracked during transport.",
+                18_900,
+                "EUR"));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(inspectionRow(receipt.returnId()))
+                    .containsEntry("status", "PENDING")
+                    .containsEntry("refund_minor_units", 18_900L));
+
+    inspectionWork.complete(
+        new CompleteInspectionCommand(
+            receipt.returnId(), "ACCEPTED", "Damage confirmed by warehouse."));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(resolutionRow(receipt.returnId()))
+                    .containsEntry("status", "APPROVED")
+                    .containsEntry("refund_minor_units", 18_900L)
+                    .containsEntry("rejection_reason", null));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> {
+              assertThat(publicationCount()).isEqualTo(2);
+              assertThat(completedPublicationCount()).isEqualTo(2);
+            });
+
+    assertThat(inspectionRow(receipt.returnId()))
+        .containsEntry("status", "COMPLETED")
+        .containsEntry("outcome", "ACCEPTED")
+        .containsEntry("version", 1L);
+
+    assertThatThrownBy(
+            () ->
+                inspectionWork.complete(
+                    new CompleteInspectionCommand(
+                        receipt.returnId(), "REJECTED", "Attempted correction.")))
+        .isInstanceOf(InspectionAlreadyCompletedException.class);
+    assertThat(resolutionCount(receipt.returnId())).isEqualTo(1);
+  }
+
+  @Test
+  void handlesConcurrentStyleRedeliveryIdempotently() {
+    UUID returnId = UUID.fromString("32e3788c-8027-4ebd-90dd-de73dbfb6750");
+    ReturnRequested repeatedEvent =
+        new ReturnRequested(
+            UUID.fromString("524f0902-0713-489d-8047-7ddfa76e5b61"),
+            returnId,
+            "ORDER-REPLAY",
+            "LINE-8",
+            "WRONG_ITEM",
+            7_500,
+            "GBP",
+            Instant.parse("2026-07-29T10:00:00Z"));
+    TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+
+    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(repeatedEvent));
+    transactions.executeWithoutResult(ignored -> eventPublisher.publishEvent(repeatedEvent));
+
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(() -> assertThat(inspectionCount(returnId)).isEqualTo(1));
+    await()
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () -> {
+              assertThat(publicationCount()).isEqualTo(2);
+              assertThat(completedPublicationCount()).isEqualTo(2);
+            });
+  }
+
+  private Map<String, Object> inspectionRow(UUID returnId) {
+    return jdbcTemplate.queryForMap(
+        """
+        SELECT status, outcome, refund_minor_units, version
+          FROM inspection_case
+         WHERE return_id = ?
+        """,
+        returnId);
+  }
+
+  private Map<String, Object> resolutionRow(UUID returnId) {
+    return jdbcTemplate.queryForMap(
+        """
+        SELECT status, refund_minor_units, rejection_reason
+          FROM return_resolution
+         WHERE return_id = ?
+        """,
+        returnId);
+  }
+
+  private int inspectionCount(UUID returnId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM inspection_case WHERE return_id = ?", Integer.class, returnId);
+  }
+
+  private int resolutionCount(UUID returnId) {
+    return jdbcTemplate.queryForObject(
+        "SELECT count(*) FROM return_resolution WHERE return_id = ?", Integer.class, returnId);
+  }
+
+  private int publicationCount() {
+    return jdbcTemplate.queryForObject("SELECT count(*) FROM event_publication", Integer.class);
+  }
+
+  private int completedPublicationCount() {
+    return jdbcTemplate.queryForObject(
+        """
+        SELECT count(*)
+          FROM event_publication
+         WHERE status = 'COMPLETED'
+           AND completion_date IS NOT NULL
+        """,
+        Integer.class);
+  }
+}

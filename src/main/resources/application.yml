@@ -7,6 +7,13 @@ spring:
     password: ${DATABASE_PASSWORD:returns}
   flyway:
     locations: classpath:db/migration
+  modulith:
+    events:
+      completion-mode: update
+      republish-outstanding-events-on-restart: false
+      jdbc:
+        schema-initialization:
+          enabled: false
   jpa:
     open-in-view: false
     hibernate:

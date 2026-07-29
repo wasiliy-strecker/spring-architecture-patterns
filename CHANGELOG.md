@@ -17,3 +17,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Public intake facade and immutable `ReturnRequested` event contract
 - PostgreSQL persistence with separate JPA entities and Flyway constraints
 - Testcontainers coverage for persistence, duplicates, events, and rollback
+- Inspection aggregate with a single completion transition and optimistic locking
+- Deterministic approval and rejection policy with stable module event contracts
+- Durable Spring Modulith JDBC event publications and idempotent PostgreSQL consumers
+- Isolated module scenarios and an end-to-end asynchronous workflow test

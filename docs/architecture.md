@@ -24,9 +24,9 @@ flowchart LR
     F -->|events| Q
 ```
 
-The arrows describe the target design. The `intake` module now owns the first
-complete business slice. The remaining modules are deliberately independent
-until their behavior is implemented.
+The solid path from `intake` through `inspection` to `resolution` is
+implemented. `refund` and `query` remain deliberately independent until their
+behavior is implemented.
 
 ## Internal dependency rule
 
@@ -66,6 +66,37 @@ semantics visible without coupling the use case to a framework. The JPA model
 is separate from the immutable domain record, and Flyway repeats critical
 invariants as database constraints.
 
+## Inspection and resolution slices
+
+```mermaid
+flowchart LR
+    RR[ReturnRequested] --> RL[ReturnRequestedListener]
+    RL --> RI[RegisterInspectionService]
+    RI --> IC[(inspection_case)]
+    API[InspectionWork] --> CI[CompleteInspectionService]
+    CI --> AGG[InspectionCase]
+    CI --> IC
+    CI --> EC[InspectionCompleted]
+    EC --> IL[InspectionCompletedListener]
+    IL --> RS[ResolveInspectionService]
+    RS --> RP[ResolutionPolicy]
+    RS --> RD[(return_resolution)]
+    RS --> OK[ReturnApproved]
+    RS --> NO[ReturnRejected]
+```
+
+`InspectionCase` is the authority for the one-way `PENDING → COMPLETED`
+transition. The persistence adapter carries its version through JPA's
+optimistic-lock field so two operators cannot both complete the same work.
+Event redelivery is a different concern: registration and resolution use
+PostgreSQL `INSERT … ON CONFLICT DO NOTHING`, making the idempotency decision
+atomic instead of relying on a race-prone read-before-write check.
+
+`ResolutionPolicy` is a pure, deterministic domain service. It maps
+`ACCEPTED` to a full refund approval and `REJECTED` to the machine-readable
+reason `INSPECTION_FAILED`. It knows nothing about events, Spring, or
+persistence.
+
 ## Cross-module contracts
 
 Synchronous collaboration uses a small public facade in the module base package.
@@ -89,20 +120,29 @@ module canvases from the compiled code.
 `ReturnIntakePersistenceIT` starts the complete application against PostgreSQL,
 exercises Flyway and Hibernate validation, checks the stored row and event, and
 proves that a failing synchronous event listener rolls back persistence.
+`InspectionModuleIT` and `ResolutionModuleIT` use Spring Modulith's `Scenario`
+API to test each module only through exposed events and APIs.
+`ReturnWorkflowIT` verifies the complete asynchronous path, publication
+completion, optimistic version increment, and duplicate event delivery against
+real PostgreSQL.
 
 The generated documents live below `target/spring-modulith-docs` and are not
 versioned; the source of truth remains the code and its verification tests.
 
 ## Delivery semantics
 
-`ReturnRequested` is currently published synchronously inside the intake
-transaction. A listener failure therefore rolls the insert back. This is tested
-but is not yet a durable delivery guarantee.
+Business events are published inside the originating transaction. Spring
+Modulith writes one `event_publication` row per transactional listener in that
+same transaction, then invokes each `@ApplicationModuleListener` asynchronously
+in a new transaction. A successful invocation marks its publication
+`COMPLETED`; an interrupted or failed delivery remains visible for controlled
+resubmission.
 
-The next event-driven milestone will add Spring Modulith's JDBC event publication
-registry. Listeners will then execute asynchronously in their own transactions.
-That provides at-least-once processing, not an exactly-once claim. Consumers
-will therefore use stable event identifiers and idempotent state transitions.
+The application deliberately claims **at-least-once**, not exactly-once,
+delivery. Events carry stable identifiers, and both implemented consumers are
+idempotent. Automatic replay at startup stays disabled so operators do not
+trigger an unbounded recovery storm; a later operations milestone will expose
+metrics and an explicit resubmission procedure before production deployment.
 
 The query module will be explicitly eventually consistent. Its projection uses
 a monotonic workflow rank so delayed events cannot move a return case backwards.

@@ -12,10 +12,11 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — return intake:** the first business module validates and
-> stores return requests in PostgreSQL and publishes a stable domain event.
-> Inspection, resolution, refunds, and query projections remain explicit roadmap
-> items rather than placeholder implementations.
+> **Current milestone — durable inspection and resolution:** return intake now
+> starts an asynchronous inspection. Completing that inspection once triggers a
+> deterministic approval or rejection, with every listener delivery tracked in
+> PostgreSQL. Refunds and query projections remain explicit roadmap items rather
+> than placeholder implementations.
 
 ## What this project demonstrates
 
@@ -25,6 +26,10 @@ and operational complexity stay low.
 - framework-independent domain and application layers enforced with ArchUnit
 - transaction demarcation through an application port rather than framework annotations
 - PostgreSQL persistence owned by a JPA adapter and schema managed by Flyway
+- transactional module events with Spring Modulith's JDBC publication registry
+- idempotent consumers backed by atomic PostgreSQL conflict handling
+- aggregate invariants plus optimistic locking for concurrent completion attempts
+- isolated module scenarios that verify collaboration through public events
 - deterministic unit tests plus real PostgreSQL integration tests with Testcontainers
 - generated module diagrams that cannot silently drift from the code
 - Java 21 baseline with Java 21 and Java 25 CI verification
@@ -44,12 +49,12 @@ flowchart LR
     E -. projection .-> Q
 ```
 
-Return intake is implemented. The remaining reference flow covers warehouse
-inspection, a deterministic resolution policy, refund scheduling, and an
+Return intake, warehouse inspection, and deterministic resolution are
+implemented. The remaining reference flow covers refund scheduling and an
 eventually consistent query view. The repository does not claim those later
 features until their milestones are merged.
 
-## Implemented use case
+## Implemented use cases
 
 ```java
 ReturnReceipt receipt =
@@ -61,12 +66,41 @@ ReturnReceipt receipt =
             "Outer packaging was crushed.",
             12_500,
             "EUR"));
+
+InspectionReceipt inspection =
+    inspectionWork.complete(
+        new CompleteInspectionCommand(
+            receipt.returnId(),
+            "ACCEPTED",
+            "Damage confirmed by warehouse."));
 ```
 
 The application normalizes and validates the request, rejects a duplicate
 order-item pair, inserts it within a transaction, and publishes
 `ReturnRequested`. The event exposes only identifiers, scalar values, and a
 timestamp—not a JPA entity or internal aggregate.
+
+The inspection listener registers pending work asynchronously. The aggregate
+allows one completion transition, and JPA optimistic locking resolves competing
+writes. `ACCEPTED` produces a full-refund `ReturnApproved`; `REJECTED` produces
+`ReturnRejected` with the stable reason `INSPECTION_FAILED`.
+
+```mermaid
+sequenceDiagram
+    participant I as intake
+    participant R as event_publication
+    participant N as inspection
+    participant D as resolution
+    I->>R: ReturnRequested + listener publication
+    R-->>N: transactional delivery
+    N->>R: InspectionCompleted + listener publication
+    R-->>D: transactional delivery
+    alt ACCEPTED
+        D-->>D: ReturnApproved
+    else REJECTED
+        D-->>D: ReturnRejected
+    end
+```
 
 ## Module map
 
@@ -104,16 +138,18 @@ planned dependency direction.
 
 1. Start with the
    [public intake facade](src/main/java/io/github/wasiliystrecker/returns/intake/ReturnIntake.java).
-2. Follow it into the
-   [framework-independent use case](src/main/java/io/github/wasiliystrecker/returns/intake/application/RequestReturnService.java).
-3. Inspect the immutable
-   [domain aggregate](src/main/java/io/github/wasiliystrecker/returns/intake/domain/ReturnRequest.java)
-   and [money value object](src/main/java/io/github/wasiliystrecker/returns/intake/domain/Money.java).
-4. Review the
-   [JPA adapter](src/main/java/io/github/wasiliystrecker/returns/intake/adapter/persistence/JpaReturnRequestRepository.java)
-   and [Flyway constraints](src/main/resources/db/migration/V1__create_return_request.sql).
+2. Follow `ReturnRequested` into the idempotent
+   [inspection listener](src/main/java/io/github/wasiliystrecker/returns/inspection/adapter/ReturnRequestedListener.java).
+3. Review the one-way state transition in
+   [InspectionCase](src/main/java/io/github/wasiliystrecker/returns/inspection/domain/InspectionCase.java)
+   and its
+   [completion use case](src/main/java/io/github/wasiliystrecker/returns/inspection/application/CompleteInspectionService.java).
+4. Inspect the deterministic
+   [resolution policy](src/main/java/io/github/wasiliystrecker/returns/resolution/domain/ResolutionPolicy.java)
+   and atomic persistence adapters.
 5. Finish with the
-   [PostgreSQL integration test](src/test/java/io/github/wasiliystrecker/returns/intake/adapter/persistence/ReturnIntakePersistenceIT.java).
+   [cross-module PostgreSQL test](src/test/java/io/github/wasiliystrecker/returns/ReturnWorkflowIT.java)
+   and [delivery semantics](docs/architecture.md#delivery-semantics).
 
 ## Build
 
@@ -173,7 +209,7 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 
 - [x] Executable modular-monolith foundation
 - [x] Return intake and PostgreSQL persistence
-- [ ] Inspection and resolution modules
+- [x] Inspection and resolution modules
 - [ ] Reliable refund handling and query projections
 - [ ] Secured REST API and operational insight
 - [ ] Container packaging, end-to-end example, and first release
