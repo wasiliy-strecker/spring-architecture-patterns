@@ -5,7 +5,7 @@ import io.github.wasiliystrecker.returns.resolution.application.ResolveInspectio
 import java.util.Objects;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
-final class InspectionCompletedListener {
+public class InspectionCompletedListener {
   private final ResolveInspectionService service;
 
   InspectionCompletedListener(ResolveInspectionService service) {
@@ -13,7 +13,7 @@ final class InspectionCompletedListener {
   }
 
   @ApplicationModuleListener
-  void on(InspectionCompleted event) {
+  public void on(InspectionCompleted event) {
     service.resolve(event);
   }
 }

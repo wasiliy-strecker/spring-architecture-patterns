@@ -5,7 +5,7 @@ import io.github.wasiliystrecker.returns.intake.events.ReturnRequested;
 import java.util.Objects;
 import org.springframework.modulith.events.ApplicationModuleListener;
 
-final class ReturnRequestedListener {
+public class ReturnRequestedListener {
   private final RegisterInspectionService service;
 
   ReturnRequestedListener(RegisterInspectionService service) {
@@ -13,7 +13,7 @@ final class ReturnRequestedListener {
   }
 
   @ApplicationModuleListener
-  void on(ReturnRequested event) {
+  public void on(ReturnRequested event) {
     service.register(event);
   }
 }
