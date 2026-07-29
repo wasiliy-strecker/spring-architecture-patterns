@@ -13,3 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Explicit return-workflow module boundaries
 - Automated module, layering, and application-context verification
 - Java 21 and Java 25 continuous integration
+- Framework-independent return intake domain and application service
+- Public intake facade and immutable `ReturnRequested` event contract
+- PostgreSQL persistence with separate JPA entities and Flyway constraints
+- Testcontainers coverage for persistence, duplicates, events, and rollback

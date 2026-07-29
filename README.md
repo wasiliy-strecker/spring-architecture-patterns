@@ -12,9 +12,10 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — architecture foundation:** the five application modules,
-> build, documentation generation, and architecture tests are in place. Business
-> behavior is added incrementally so that every commit remains reviewable.
+> **Current milestone — return intake:** the first business module validates and
+> stores return requests in PostgreSQL and publishes a stable domain event.
+> Inspection, resolution, refunds, and query projections remain explicit roadmap
+> items rather than placeholder implementations.
 
 ## What this project demonstrates
 
@@ -22,6 +23,9 @@ and operational complexity stay low.
 - Spring Modulith verification for cycles, exposed APIs, and allowed dependencies
 - hexagonal boundaries inside each module
 - framework-independent domain and application layers enforced with ArchUnit
+- transaction demarcation through an application port rather than framework annotations
+- PostgreSQL persistence owned by a JPA adapter and schema managed by Flyway
+- deterministic unit tests plus real PostgreSQL integration tests with Testcontainers
 - generated module diagrams that cannot silently drift from the code
 - Java 21 baseline with Java 21 and Java 25 CI verification
 
@@ -40,10 +44,29 @@ flowchart LR
     E -. projection .-> Q
 ```
 
-The planned reference flow covers intake, warehouse inspection, a deterministic
-resolution policy, refund scheduling, and an eventually consistent query view.
-The repository does not claim that these business features are implemented
-until their milestone is merged.
+Return intake is implemented. The remaining reference flow covers warehouse
+inspection, a deterministic resolution policy, refund scheduling, and an
+eventually consistent query view. The repository does not claim those later
+features until their milestones are merged.
+
+## Implemented use case
+
+```java
+ReturnReceipt receipt =
+    returnIntake.request(
+        new RequestReturnCommand(
+            "ORDER-1001",
+            "LINE-2",
+            "DAMAGED",
+            "Outer packaging was crushed.",
+            12_500,
+            "EUR"));
+```
+
+The application normalizes and validates the request, rejects a duplicate
+order-item pair, inserts it within a transaction, and publishes
+`ReturnRequested`. The event exposes only identifiers, scalar values, and a
+timestamp—not a JPA entity or internal aggregate.
 
 ## Module map
 
@@ -55,8 +78,8 @@ until their milestone is merged.
 | `refund` | Schedule an approved refund | API and refund event |
 | `query` | Build read-optimized return case views | Query API |
 
-Every module will own its domain, use cases, and adapters. Other modules may use
-only explicitly exposed APIs or named event interfaces.
+Every module owns its domain, use cases, and adapters. Other modules may use only
+explicitly exposed APIs or named event interfaces.
 
 ## Architecture guardrails
 
@@ -71,15 +94,32 @@ flowchart LR
 `ApplicationModulesTest` verifies the Spring Modulith model and generates
 PlantUML plus module canvases under `target/spring-modulith-docs`.
 `ArchitectureRulesTest` prevents domain and application code from depending on
-Spring, Jakarta Persistence, or servlet APIs.
+Spring, Jakarta Persistence, or servlet APIs and enforces inward dependency
+direction.
 
 See [the architecture notes](docs/architecture.md) for the decisions and
 planned dependency direction.
 
+## Two-minute review
+
+1. Start with the
+   [public intake facade](src/main/java/io/github/wasiliystrecker/returns/intake/ReturnIntake.java).
+2. Follow it into the
+   [framework-independent use case](src/main/java/io/github/wasiliystrecker/returns/intake/application/RequestReturnService.java).
+3. Inspect the immutable
+   [domain aggregate](src/main/java/io/github/wasiliystrecker/returns/intake/domain/ReturnRequest.java)
+   and [money value object](src/main/java/io/github/wasiliystrecker/returns/intake/domain/Money.java).
+4. Review the
+   [JPA adapter](src/main/java/io/github/wasiliystrecker/returns/intake/adapter/persistence/JpaReturnRequestRepository.java)
+   and [Flyway constraints](src/main/resources/db/migration/V1__create_return_request.sql).
+5. Finish with the
+   [PostgreSQL integration test](src/test/java/io/github/wasiliystrecker/returns/intake/adapter/persistence/ReturnIntakePersistenceIT.java).
+
 ## Build
 
-Requirements: a full JDK from version 21 through 25. The Maven Wrapper downloads
-the pinned Maven distribution.
+Requirements: a full JDK from version 21 through 25 and Docker for the
+PostgreSQL integration test. The Maven Wrapper downloads the pinned Maven
+distribution.
 
 ```bash
 ./mvnw clean verify
@@ -91,20 +131,39 @@ Run only the fast architecture checks:
 ./mvnw test -Dtest=ApplicationModulesTest,ArchitectureRulesTest
 ```
 
-Start the foundation application locally:
+Run all unit and architecture checks without integration tests:
+
+```bash
+./mvnw clean verify -DskipITs
+```
+
+Start PostgreSQL for the application:
+
+```bash
+docker run --rm --name returns-postgres \
+  -e POSTGRES_DB=returns \
+  -e POSTGRES_USER=returns \
+  -e POSTGRES_PASSWORD=returns \
+  -p 5432:5432 \
+  postgres:18.3-alpine
+```
+
+Then run the application in a second terminal:
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-No database is required for the foundation milestone. PostgreSQL, Flyway, and
-Testcontainers arrive with the first persistence-backed use case.
+Flyway creates the schema and Hibernate validates that its mapping matches it.
 
 ## Technology choices
 
 - Java 21
 - Spring Boot 4.1
 - Spring Modulith 2.1
+- PostgreSQL 18 and Flyway
+- Spring Data JPA
+- Testcontainers 2.0
 - JUnit and AssertJ
 - ArchUnit
 - Maven Wrapper and Spotless
@@ -113,7 +172,7 @@ Testcontainers arrive with the first persistence-backed use case.
 ## Roadmap
 
 - [x] Executable modular-monolith foundation
-- [ ] Return intake and PostgreSQL persistence
+- [x] Return intake and PostgreSQL persistence
 - [ ] Inspection and resolution modules
 - [ ] Reliable refund handling and query projections
 - [ ] Secured REST API and operational insight

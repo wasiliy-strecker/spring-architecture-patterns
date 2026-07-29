@@ -31,7 +31,25 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - name: Verify application
-        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify -DskipITs
+
+  postgres-integration:
+    name: PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Exercise the real persistence boundary
+        run: >-
+          ./mvnw --batch-mode --no-transfer-progress
+          test-compile failsafe:integration-test failsafe:verify
 
   architecture-smoke:
     name: Architecture smoke

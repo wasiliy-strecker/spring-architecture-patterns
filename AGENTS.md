@@ -19,7 +19,8 @@ API or a named event interface and is verified by Spring Modulith and ArchUnit.
 ## Build and verification
 
 - `./mvnw clean verify`: format-check, compile, test, verify architecture, and
-  package the application.
+  package the application; Docker is required for PostgreSQL integration tests.
+- `./mvnw clean verify -DskipITs`: run the complete non-container verification.
 - `./mvnw test -Dtest=ApplicationModulesTest,ArchitectureRulesTest`: run the
   fast architecture smoke suite.
 - Use Java 21 language features without preview APIs. CI also verifies Java 25.
