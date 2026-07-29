@@ -25,4 +25,32 @@ class ArchitectureRulesTest {
         .allowEmptyShould(true)
         .check(productionClasses);
   }
+
+  @Test
+  void internalDependenciesPointTowardTheDomain() {
+    var productionClasses =
+        new ClassFileImporter()
+            .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("io.github.wasiliystrecker.returns");
+
+    noClasses()
+        .that()
+        .resideInAnyPackage("..domain..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("..application..", "..adapter..")
+        .because("the domain is the innermost layer")
+        .allowEmptyShould(true)
+        .check(productionClasses);
+
+    noClasses()
+        .that()
+        .resideInAnyPackage("..application..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("..adapter..")
+        .because("application ports must not depend on their adapters")
+        .allowEmptyShould(true)
+        .check(productionClasses);
+  }
 }

@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: spring-architecture-patterns
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/returns}
+    username: ${DATABASE_USER:returns}
+    password: ${DATABASE_PASSWORD:returns}
+  flyway:
+    locations: classpath:db/migration
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+logging:
+  level:
+    org.hibernate.SQL: warn
