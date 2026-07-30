@@ -24,11 +24,18 @@ API or a named event interface and is verified by Spring Modulith and ArchUnit.
 - `./mvnw clean verify -DskipITs`: run the complete non-container verification.
 - `./mvnw test -Dtest=ApplicationModulesTest,ArchitectureRulesTest`: run the
   fast architecture smoke suite.
+- `./scripts/container-e2e.sh`: build the OCI image, start the application and
+  PostgreSQL with Compose, and exercise the signed HTTP workflow. This requires
+  Docker with the Compose plugin, `curl`, `jq`, and `openssl`.
 - Use Java 21 language features without preview APIs. CI also verifies Java 25.
 
 Use Google Java Format through Spotless. Add focused domain tests for business
 rules and PostgreSQL Testcontainers tests for persistence behavior. Do not
 replace integration tests with H2.
+
+Keep the runtime image non-root and compatible with a read-only root
+filesystem. End-to-end credentials must be generated in a temporary directory;
+never add a private signing key to the repository.
 
 ## Security and configuration
 
