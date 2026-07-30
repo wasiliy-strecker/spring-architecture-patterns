@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-30
+
 ### Added
 
 - Spring Boot and Spring Modulith application foundation
@@ -35,3 +37,6 @@ and this project follows [Semantic Versioning](https://semver.org/).
   PostgreSQL integration tests
 - Offline RSA JWT decoding with explicit issuer, audience, signature, and time
   validation
+
+[Unreleased]: https://github.com/wasiliy-strecker/spring-architecture-patterns/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/wasiliy-strecker/spring-architecture-patterns/releases/tag/v1.0.0

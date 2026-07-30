@@ -17,6 +17,20 @@ license, version, and revision.
 The image declares `/readyz` as its health check and handles `SIGTERM`. Compose
 adds a 30-second stop budget and a graceful Spring shutdown phase.
 
+Stable releases are available from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/wasiliy-strecker/spring-architecture-patterns:1.0.0
+APP_IMAGE=ghcr.io/wasiliy-strecker/spring-architecture-patterns \
+  IMAGE_VERSION=1.0.0 \
+  docker compose up --no-build --wait
+```
+
+Every release image includes OCI source, version, revision, license, and
+description labels. The registry also receives BuildKit provenance and SBOM
+attestations. The versioned tag is immutable by convention; `1.0`, `1`, and
+`latest` are moving convenience tags.
+
 ## Compose topology
 
 ```mermaid

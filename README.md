@@ -1,6 +1,7 @@
 # Spring Architecture Patterns
 
 [![Verify](https://github.com/wasiliy-strecker/spring-architecture-patterns/actions/workflows/verify.yml/badge.svg)](https://github.com/wasiliy-strecker/spring-architecture-patterns/actions/workflows/verify.yml)
+[![Release](https://img.shields.io/github/v/release/wasiliy-strecker/spring-architecture-patterns?display_name=tag)](https://github.com/wasiliy-strecker/spring-architecture-patterns/releases/latest)
 [![Java 21](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot 4.1](https://img.shields.io/badge/Spring_Boot-4.1-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
@@ -12,11 +13,10 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — containerized delivery:** a layered, non-root OCI image
-> now runs the complete secured workflow with PostgreSQL on a read-only
-> filesystem. An executable end-to-end scenario proves real JWT validation,
-> asynchronous module collaboration, persistence, metrics, and shutdown-safe
-> packaging before the first release.
+> **Current milestone — v1.0.0:** the first stable release packages the complete
+> secured workflow as an executable JAR and a provenance-attested OCI image. An
+> end-to-end scenario proves real JWT validation, asynchronous module
+> collaboration, PostgreSQL persistence, metrics, and a hardened runtime.
 
 ## What this project demonstrates
 
@@ -326,6 +326,19 @@ endpoints, point `JWT_PUBLIC_KEY_FILE` at the public key belonging to your local
 authorization server. See [the container notes](docs/container.md) for the
 runtime contract and production boundaries.
 
+Run the published `v1.0.0` image with the same topology:
+
+```bash
+docker pull ghcr.io/wasiliy-strecker/spring-architecture-patterns:1.0.0
+APP_IMAGE=ghcr.io/wasiliy-strecker/spring-architecture-patterns \
+  IMAGE_VERSION=1.0.0 \
+  docker compose up --no-build --wait
+```
+
+The [GitHub release](https://github.com/wasiliy-strecker/spring-architecture-patterns/releases/tag/v1.0.0)
+also contains the executable JAR and its SHA-256 checksum. The release workflow
+publishes image provenance and an SBOM as OCI attestations in GHCR.
+
 Start PostgreSQL for the application:
 
 ```bash
@@ -371,7 +384,7 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - [x] Secured REST API and operational insight
 - [x] Layered container packaging and hardened Compose runtime
 - [x] Signed HTTP end-to-end example
-- [ ] First stable release
+- [x] First stable release
 
 Design choices are recorded in [docs/architecture.md](docs/architecture.md).
 

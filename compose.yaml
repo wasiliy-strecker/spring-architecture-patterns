@@ -20,11 +20,11 @@ services:
       - /run/postgresql
 
   app:
-    image: spring-architecture-patterns:${IMAGE_VERSION:-local}
+    image: ${APP_IMAGE:-spring-architecture-patterns}:${IMAGE_VERSION:-local}
     build:
       context: .
       args:
-        OCI_VERSION: ${IMAGE_VERSION:-0.1.0-SNAPSHOT}
+        OCI_VERSION: ${IMAGE_VERSION:-1.0.0}
         OCI_REVISION: ${IMAGE_REVISION:-local}
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/returns
