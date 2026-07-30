@@ -24,6 +24,10 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
     properties = {
+      "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://auth.example.test",
+      "spring.security.oauth2.resourceserver.jwt.public-key-location="
+          + "classpath:security/demo-public-key.pem",
+      "spring.security.oauth2.resourceserver.jwt.audiences=returns-api",
       "returns.operations.metrics-initial-delay=PT0.1S",
       "returns.operations.metrics-refresh-interval=PT0.1S"
     })
