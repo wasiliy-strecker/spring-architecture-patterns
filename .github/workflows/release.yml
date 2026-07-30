@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - pom.xml
+      - Dockerfile
+      - compose.yaml
+      - CHANGELOG.md
+      - docs/releases/**
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Validate release metadata
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(
+            ./mvnw --batch-mode --no-transfer-progress \
+              help:evaluate -Dexpression=project.version -q -DforceStdout
+          )"
+
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable semantic version, got '${version}'."
+            exit 1
+          fi
+
+          grep --fixed-strings --line-regexp \
+            "ARG OCI_VERSION=${version}" Dockerfile
+          test -f "docs/releases/v${version}.md"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match v${version}."
+              exit 1
+            fi
+
+            if [[ "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" != "tag" ]]; then
+              echo "::error::Stable releases require an annotated tag."
+              exit 1
+            fi
+
+            git fetch --no-tags origin \
+              refs/heads/main:refs/remotes/origin/main
+            if ! git merge-base --is-ancestor \
+              "${GITHUB_SHA}" refs/remotes/origin/main; then
+              echo "::error::Release tags must point to the main branch."
+              exit 1
+            fi
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      - name: Build release candidate
+        run: >-
+          ./mvnw --batch-mode --no-transfer-progress
+          clean verify -DskipITs
+
+  publish:
+    name: Publish GitHub and OCI release
+    if: github.event_name == 'push'
+    needs: metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.metadata.outputs.version }}
+      IMAGE: ghcr.io/wasiliy-strecker/spring-architecture-patterns
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Java
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Assemble release files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./mvnw --batch-mode --no-transfer-progress \
+            clean package -DskipTests -DskipITs
+
+          artifact="spring-architecture-patterns-${VERSION}.jar"
+          cp target/application.jar "target/${artifact}"
+          (
+            cd target
+            sha256sum "${artifact}" > "${artifact}.sha256"
+          )
+      - name: Authenticate to GitHub Container Registry
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "${REGISTRY_TOKEN}" |
+            docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+      - name: Publish OCI image with attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          major="${VERSION%%.*}"
+          minor="${VERSION%.*}"
+
+          docker buildx create --use
+          docker buildx inspect --bootstrap
+          docker buildx build \
+            --pull \
+            --push \
+            --platform linux/amd64 \
+            --build-arg "OCI_VERSION=${VERSION}" \
+            --build-arg "OCI_REVISION=${GITHUB_SHA}" \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:${minor}" \
+            --tag "${IMAGE}:${major}" \
+            --tag "${IMAGE}:latest" \
+            --provenance=mode=max \
+            --sbom=true \
+            .
+      - name: Publish GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact="target/spring-architecture-patterns-${VERSION}.jar"
+          checksum="${artifact}.sha256"
+
+          if gh release view "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              "${artifact}" "${checksum}" \
+              --clobber \
+              --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              "${artifact}" "${checksum}" \
+              --verify-tag \
+              --latest \
+              --title "Spring Architecture Patterns ${GITHUB_REF_NAME}" \
+              --notes-file "docs/releases/${GITHUB_REF_NAME}.md" \
+              --repo "${GITHUB_REPOSITORY}"
+          fi

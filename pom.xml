@@ -13,7 +13,7 @@
 
   <groupId>io.github.wasiliy-strecker</groupId>
   <artifactId>spring-architecture-patterns</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 
   <name>Spring Architecture Patterns</name>
   <description>Production-minded Spring Boot architecture patterns demonstrated through a modular return and refund workflow.</description>
@@ -38,7 +38,7 @@
     <connection>scm:git:https://github.com/wasiliy-strecker/spring-architecture-patterns.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/wasiliy-strecker/spring-architecture-patterns.git</developerConnection>
     <url>https://github.com/wasiliy-strecker/spring-architecture-patterns</url>
-    <tag>HEAD</tag>
+    <tag>v1.0.0</tag>
   </scm>
 
   <properties>

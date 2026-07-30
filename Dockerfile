@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
-ARG OCI_VERSION=0.1.0-SNAPSHOT
+ARG OCI_VERSION=1.0.0
 ARG OCI_REVISION=local
 
 LABEL org.opencontainers.image.title="Spring Architecture Patterns" \
