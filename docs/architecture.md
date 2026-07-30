@@ -22,11 +22,14 @@ flowchart LR
     N -->|events| Q
     R -->|events| Q
     F -->|events| Q
+    O[operations] -->|diagnostics| EP[(event_publication)]
 ```
 
 The complete path from `intake` through `refund` is implemented. `query`
 subscribes independently to every public event and builds the read side without
 introducing synchronous dependencies back into the write modules.
+`operations` owns the operator-facing view and recovery port for the durable
+event registry without reaching into any business module.
 
 ## Internal dependency rule
 
@@ -128,6 +131,42 @@ upserts allow later workflow events to arrive before intake data. A workflow
 rank can advance but never decrease, while missing lower-rank attributes are
 still filled when delayed events arrive.
 
+## HTTP security and operations boundaries
+
+```mermaid
+flowchart LR
+    C[OAuth client] -->|JWT + least-privilege scope| W[Module web adapters]
+    W --> I[intake API]
+    W --> N[inspection API]
+    W --> F[refund API]
+    W --> Q[query API]
+    P[Platform probe] --> H[liveness / readiness]
+    A[Operator] -->|operations:read| M[Prometheus + backlog]
+    A -->|operations:manage| X[bounded resubmission]
+    X --> E[(event_publication)]
+```
+
+The HTTP layer is an adapter, not a second application model. Request records
+perform transport-level shape validation and then translate to the public
+module commands. Domain invariants remain authoritative. Responses use
+transport records where creation or command acknowledgement semantics differ
+from the internal use-case result; the query API intentionally exposes its
+read-optimized view.
+
+Spring Security runs as a stateless OAuth 2.0 resource server. RSA signatures,
+issuer, audience, time bounds, and operation-specific scopes are checked before
+a controller is invoked. Only probes and RFC 9728 protected-resource metadata
+are public. RFC 6750 authentication headers are preserved, while RFC 9457
+problem details add a stable machine code and a safe request identifier shared
+with logs and the response header.
+
+The `operations` module follows the same adapter-to-application direction as
+the business modules. Its JDBC adapter observes registry state, its Modulith
+adapter performs resubmission, and the application service coordinates a
+bounded command using a clock and framework-independent ports. Prometheus
+gauges read one periodically refreshed snapshot instead of querying PostgreSQL
+once per gauge during every scrape.
+
 ## Cross-module contracts
 
 Synchronous collaboration uses a small public facade in the module base package.
@@ -158,6 +197,10 @@ API to test each module only through exposed events and APIs.
 `ReturnWorkflowIT` verifies the complete asynchronous path, publication
 completion, optimistic version increments, duplicate delivery, settlement, and
 the final read view against real PostgreSQL.
+`SecuredRestApiTest` exercises the complete MVC contract without infrastructure:
+scope isolation, OAuth metadata, validation, business problems, and correlation.
+`OperationsEndpointIT` verifies public probes, protected diagnostics, bounded
+recovery, and Prometheus output against the real event registry.
 
 The generated documents live below `target/spring-modulith-docs` and are not
 versioned; the source of truth remains the code and its verification tests.
@@ -175,8 +218,12 @@ The application deliberately claims **at-least-once**, not exactly-once,
 delivery. Events carry stable identifiers, write-side consumers use atomic
 uniqueness constraints, and the query side keeps a processed-event ledger.
 Automatic replay at startup stays disabled so operators do not trigger an
-unbounded recovery storm; a later operations milestone will expose metrics and
-an explicit resubmission procedure before production deployment.
+unbounded recovery storm. Operators inspect
+`GET /actuator/eventpublications`, alert on the Prometheus backlog metrics, and
+use `POST /actuator/eventpublications` with a minimum age, in-flight limit, and
+batch size. The response reports an observed eligible count rather than
+claiming synchronous delivery success, and each accepted request is audit
+logged with the authenticated subject.
 
 The query API is explicitly eventually consistent. Callers must therefore
 tolerate a short period in which a newly submitted return has no view yet.
