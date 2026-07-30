@@ -28,3 +28,10 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - RFC 9457 problem responses, OAuth resource metadata, and request correlation
 - Health probes, Prometheus event-publication metrics, and protected diagnostics
 - Explicit bounded resubmission of incomplete events with operator audit logging
+- Layered, non-root OCI packaging and a hardened local Compose topology
+- Executable HTTP end-to-end workflow using an ephemeral RSA signing key
+- Continuous container verification and automated Docker base-image updates
+- Flyway currency-column alignment with production schema validation in
+  PostgreSQL integration tests
+- Offline RSA JWT decoding with explicit issuer, audience, signature, and time
+  validation

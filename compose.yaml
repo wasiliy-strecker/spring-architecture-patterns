@@ -1,0 +1,61 @@
+name: spring-architecture-patterns
+
+services:
+  postgres:
+    image: postgres:18.3-alpine
+    environment:
+      POSTGRES_DB: returns
+      POSTGRES_USER: returns
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-returns-local-only}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username returns --dbname returns"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - returns-postgres:/var/lib/postgresql
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+
+  app:
+    image: spring-architecture-patterns:${IMAGE_VERSION:-local}
+    build:
+      context: .
+      args:
+        OCI_VERSION: ${IMAGE_VERSION:-0.1.0-SNAPSHOT}
+        OCI_REVISION: ${IMAGE_REVISION:-local}
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/returns
+      DATABASE_USER: returns
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-returns-local-only}
+      JWT_PUBLIC_KEY_LOCATION: file:/run/secrets/returns_jwt_public_key
+      JWT_ISSUER_URI: https://auth.example.test
+      JWT_AUDIENCE: returns-api
+      SERVER_SHUTDOWN: graceful
+      SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    secrets:
+      - source: returns_jwt_public_key
+        target: returns_jwt_public_key
+        mode: 0444
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+secrets:
+  returns_jwt_public_key:
+    file: ${JWT_PUBLIC_KEY_FILE:-./src/main/resources/security/demo-public-key.pem}
+
+volumes:
+  returns-postgres:

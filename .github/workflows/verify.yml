@@ -68,3 +68,13 @@ jobs:
         run: >-
           ./mvnw --batch-mode --no-transfer-progress
           test -Dtest=ApplicationModulesTest,ArchitectureRulesTest
+
+  container-e2e:
+    name: Container end-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Exercise the packaged application
+        run: ./scripts/container-e2e.sh

@@ -160,6 +160,11 @@ are public. RFC 6750 authentication headers are preserved, while RFC 9457
 problem details add a stable machine code and a safe request identifier shared
 with logs and the response header.
 
+The decoder is built explicitly from the configured RSA public key. Issuer and
+audience remain validation claims but do not trigger authorization-server
+discovery, so startup and token verification do not depend on an outbound
+network call. Key rotation remains an external deployment responsibility.
+
 The `operations` module follows the same adapter-to-application direction as
 the business modules. Its JDBC adapter observes registry state, its Modulith
 adapter performs resubmission, and the application service coordinates a
@@ -202,8 +207,45 @@ scope isolation, OAuth metadata, validation, business problems, and correlation.
 `OperationsEndpointIT` verifies public probes, protected diagnostics, bounded
 recovery, and Prometheus output against the real event registry.
 
+Container and integration tests load the same application configuration.
+Testcontainers overrides only the database connection, so Flyway migrations and
+Hibernate `validate` use the packaged runtime settings and detect schema/JPA
+drift before an image is published.
+
 The generated documents live below `target/spring-modulith-docs` and are not
 versioned; the source of truth remains the code and its verification tests.
+
+## Deployment boundary
+
+```mermaid
+flowchart LR
+    C[OAuth client] -->|signed JWT| A[non-root application container]
+    P[platform] -->|readyz / livez| A
+    A -->|JDBC| D[(PostgreSQL container)]
+    K[read-only public key secret] --> A
+    A -->|metrics| O[operator]
+```
+
+The Dockerfile separates compilation from runtime and extracts Spring Boot
+layers so dependencies remain cacheable when application code changes. The
+runtime image contains a JRE rather than a JDK, declares OCI metadata, runs as
+UID/GID `10001`, and has no need to write to its application directory.
+
+Compose applies the runtime constraints that belong to the deployment
+environment: the application root filesystem is read-only, Linux capabilities
+are dropped, privilege escalation is disabled, and only `/tmp` is writable.
+PostgreSQL is not published to the host. Startup waits for database health,
+Flyway migration, Hibernate validation, and the application readiness probe.
+
+The container end-to-end scenario generates an RSA key pair at runtime and
+mounts only its public half into the application. It then signs short-lived
+tokens and tests the real HTTP boundary. No test-only authentication bypass,
+private key, or embedded database is included in the image.
+
+The Compose file is an executable local reference, not a production platform.
+A production deployment still provides TLS termination, an authorization
+server, a managed secret, database backup and recovery, resource policies, and
+central log and metric collection.
 
 ## Delivery semantics
 

@@ -12,10 +12,11 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — secured API and operational insight:** the complete
-> workflow is available through a scope-protected OAuth 2.0 resource server,
-> while health probes, Prometheus metrics, backlog diagnostics, and bounded
-> event recovery make delivery behavior visible to operators.
+> **Current milestone — containerized delivery:** a layered, non-root OCI image
+> now runs the complete secured workflow with PostgreSQL on a read-only
+> filesystem. An executable end-to-end scenario proves real JWT validation,
+> asynchronous module collaboration, persistence, metrics, and shutdown-safe
+> packaging before the first release.
 
 ## What this project demonstrates
 
@@ -34,6 +35,8 @@ and operational complexity stay low.
 - explicit transport DTOs plus RFC 9457 problem details and request correlation
 - public liveness/readiness probes and protected Prometheus diagnostics
 - bounded, audit-logged recovery for incomplete Modulith event publications
+- layered OCI packaging with a non-root user and read-only runtime filesystem
+- ephemeral-key HTTP end-to-end verification across the Compose boundary
 - isolated module scenarios that verify collaboration through public events
 - deterministic unit tests plus real PostgreSQL integration tests with Testcontainers
 - generated module diagrams that cannot silently drift from the code
@@ -267,6 +270,8 @@ planned dependency direction.
 8. Finish with the
    [cross-module PostgreSQL test](src/test/java/io/github/wasiliystrecker/returns/ReturnWorkflowIT.java)
    and [delivery semantics](docs/architecture.md#delivery-semantics).
+9. Review the hardened [runtime image](Dockerfile) and the
+   [executable container workflow](scripts/container-e2e.sh).
 
 ## Build
 
@@ -289,6 +294,37 @@ Run all unit and architecture checks without integration tests:
 ```bash
 ./mvnw clean verify -DskipITs
 ```
+
+## Container end-to-end example
+
+Requirements: Docker with the Compose plugin, `curl`, `jq`, and `openssl`.
+
+```bash
+./scripts/container-e2e.sh
+```
+
+The script builds the layered image, starts PostgreSQL and the application,
+creates a temporary RSA key pair, and signs two ten-minute JWTs. It verifies
+`401` and `403` boundaries before driving an accepted return through inspection,
+refund scheduling, provider acknowledgement, the final CQRS view, and a
+protected Prometheus scrape.
+
+The private key exists only in a restricted temporary directory. Cleanup
+removes the key, containers, network, and database volume even when a check
+fails. The script also proves that the application runs as UID/GID `10001` with
+a read-only root filesystem.
+
+For an interactive local environment:
+
+```bash
+docker compose up --build --wait
+```
+
+The default Compose environment uses the repository's public-only bootstrap
+key, so it can start safely but cannot mint an access token. To call secured
+endpoints, point `JWT_PUBLIC_KEY_FILE` at the public key belonging to your local
+authorization server. See [the container notes](docs/container.md) for the
+runtime contract and production boundaries.
 
 Start PostgreSQL for the application:
 
@@ -324,6 +360,7 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - ArchUnit
 - Maven Wrapper and Spotless
 - GitHub Actions
+- Docker and Docker Compose
 
 ## Roadmap
 
@@ -332,7 +369,9 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - [x] Inspection and resolution modules
 - [x] Reliable refund handling and query projections
 - [x] Secured REST API and operational insight
-- [ ] Container packaging, end-to-end example, and first release
+- [x] Layered container packaging and hardened Compose runtime
+- [x] Signed HTTP end-to-end example
+- [ ] First stable release
 
 Design choices are recorded in [docs/architecture.md](docs/architecture.md).
 
