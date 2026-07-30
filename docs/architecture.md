@@ -160,6 +160,11 @@ are public. RFC 6750 authentication headers are preserved, while RFC 9457
 problem details add a stable machine code and a safe request identifier shared
 with logs and the response header.
 
+The decoder is built explicitly from the configured RSA public key. Issuer and
+audience remain validation claims but do not trigger authorization-server
+discovery, so startup and token verification do not depend on an outbound
+network call. Key rotation remains an external deployment responsibility.
+
 The `operations` module follows the same adapter-to-application direction as
 the business modules. Its JDBC adapter observes registry state, its Modulith
 adapter performs resubmission, and the application service coordinates a

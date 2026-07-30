@@ -35,8 +35,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(
@@ -275,13 +273,6 @@ final class SecuredRestApiTest {
                       NOW,
                       6))
               : Optional.empty();
-    }
-
-    @Bean
-    JwtDecoder jwtDecoder() {
-      return token -> {
-        throw new JwtException("Raw token decoding is outside this MVC slice");
-      };
     }
   }
 }

@@ -33,3 +33,5 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Continuous container verification and automated Docker base-image updates
 - Flyway currency-column alignment with production schema validation in
   PostgreSQL integration tests
+- Offline RSA JWT decoding with explicit issuer, audience, signature, and time
+  validation
