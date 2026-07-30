@@ -45,6 +45,10 @@ Runtime hardening for the application includes:
 The default database password is intentionally local-only. Supply external
 configuration and secret management in any shared environment.
 
+The end-to-end private key remains owner-only (`0600`). Its public counterpart
+is mounted read-only (`0444`) so the numeric application user can verify
+signatures without gaining access to signing material.
+
 ## Executable end-to-end scenario
 
 Run:

@@ -41,7 +41,9 @@ services:
     ports:
       - "127.0.0.1:${APP_PORT:-8080}:8080"
     secrets:
-      - returns_jwt_public_key
+      - source: returns_jwt_public_key
+        target: returns_jwt_public_key
+        mode: 0444
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

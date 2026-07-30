@@ -57,6 +57,7 @@ openssl genpkey \
   -pkeyopt rsa_keygen_bits:2048 \
   -out "${private_key}" >/dev/null 2>&1
 openssl pkey -in "${private_key}" -pubout -out "${public_key}" >/dev/null 2>&1
+chmod 0444 "${public_key}"
 
 base64_urlencode() {
   openssl base64 -A | tr '+/' '-_' | tr -d '='
