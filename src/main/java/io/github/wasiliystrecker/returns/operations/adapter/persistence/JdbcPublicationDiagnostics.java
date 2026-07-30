@@ -9,11 +9,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-final class JdbcPublicationDiagnostics implements PublicationDiagnostics {
+public class JdbcPublicationDiagnostics implements PublicationDiagnostics {
 
   private final JdbcTemplate jdbcTemplate;
 
-  JdbcPublicationDiagnostics(JdbcTemplate jdbcTemplate) {
+  public JdbcPublicationDiagnostics(JdbcTemplate jdbcTemplate) {
     this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate");
   }
 

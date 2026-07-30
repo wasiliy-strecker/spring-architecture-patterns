@@ -11,11 +11,12 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 
-@ApplicationModuleTest
+@ApplicationModuleTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 final class InspectionModuleIT extends PostgresIntegrationTest {
   private static final UUID RETURN_ID = UUID.fromString("31302ff9-9661-42e4-a87b-2126530422f8");
   private static final Instant REQUESTED_AT = Instant.parse("2026-07-29T08:00:00Z");
