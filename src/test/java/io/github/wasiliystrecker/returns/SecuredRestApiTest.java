@@ -1,6 +1,7 @@
 package io.github.wasiliystrecker.returns;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -99,6 +100,18 @@ final class SecuredRestApiTest {
         .perform(get("/api/v1/returns/{returnId}", RETURN_ID).with(scope("returns:write")))
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("INSUFFICIENT_SCOPE"));
+  }
+
+  @Test
+  void rejectsStateChangingRequestsWithoutCsrfProtectionOutsideBearerAuthentication()
+      throws Exception {
+    mockMvc
+        .perform(
+            post("/api/v1/returns")
+                .with(
+                    user("session-user")
+                        .authorities(new SimpleGrantedAuthority("SCOPE_returns:write"))))
+        .andExpect(status().isForbidden());
   }
 
   @Test

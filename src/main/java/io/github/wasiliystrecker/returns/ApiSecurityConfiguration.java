@@ -31,8 +31,7 @@ class ApiSecurityConfiguration {
     AuthenticationEntryPoint authenticationEntryPoint = authenticationEntryPoint(objectMapper);
     AccessDeniedHandler accessDeniedHandler = accessDeniedHandler(objectMapper);
 
-    http.csrf(csrf -> csrf.disable())
-        .sessionManagement(
+    http.sessionManagement(
             sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authorizeHttpRequests(
             authorize ->
