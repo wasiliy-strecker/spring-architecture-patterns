@@ -24,10 +24,16 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.MOCK,
     properties = {
+      "spring.application.name=spring-architecture-patterns",
       "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://auth.example.test",
       "spring.security.oauth2.resourceserver.jwt.public-key-location="
           + "classpath:security/demo-public-key.pem",
       "spring.security.oauth2.resourceserver.jwt.audiences=returns-api",
+      "spring.jpa.open-in-view=false",
+      "management.endpoints.web.exposure.include=health,prometheus,eventpublications",
+      "management.endpoint.health.probes.enabled=true",
+      "management.endpoint.health.probes.add-additional-paths=true",
+      "management.metrics.tags.application=spring-architecture-patterns",
       "returns.operations.metrics-initial-delay=PT0.1S",
       "returns.operations.metrics-refresh-interval=PT0.1S"
     })
@@ -46,6 +52,8 @@ final class OperationsEndpointIT extends PostgresIntegrationTest {
   void exposesHealthButProtectsDiagnosticsAndBoundedRecovery() throws Exception {
     insertRecentIncompletePublication();
 
+    mockMvc.perform(get("/livez")).andExpect(status().isOk());
+    mockMvc.perform(get("/readyz")).andExpect(status().isOk());
     mockMvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
     mockMvc.perform(get("/actuator/eventpublications")).andExpect(status().isUnauthorized());
 
