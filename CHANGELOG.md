@@ -31,3 +31,5 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Layered, non-root OCI packaging and a hardened local Compose topology
 - Executable HTTP end-to-end workflow using an ephemeral RSA signing key
 - Continuous container verification and automated Docker base-image updates
+- Flyway currency-column alignment with production schema validation in
+  PostgreSQL integration tests

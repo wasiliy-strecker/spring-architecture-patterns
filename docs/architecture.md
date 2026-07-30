@@ -202,6 +202,11 @@ scope isolation, OAuth metadata, validation, business problems, and correlation.
 `OperationsEndpointIT` verifies public probes, protected diagnostics, bounded
 recovery, and Prometheus output against the real event registry.
 
+Container and integration tests load the same application configuration.
+Testcontainers overrides only the database connection, so Flyway migrations and
+Hibernate `validate` use the packaged runtime settings and detect schema/JPA
+drift before an image is published.
+
 The generated documents live below `target/spring-modulith-docs` and are not
 versioned; the source of truth remains the code and its verification tests.
 

@@ -33,6 +33,11 @@ Use Google Java Format through Spotless. Add focused domain tests for business
 rules and PostgreSQL Testcontainers tests for persistence behavior. Do not
 replace integration tests with H2.
 
+Integration tests must load the production `application.yml` so Flyway and
+Hibernate schema validation cannot drift from the packaged runtime. Override
+individual infrastructure values through dynamic test properties instead of
+shadowing the complete configuration with a test resource.
+
 Keep the runtime image non-root and compatible with a read-only root
 filesystem. End-to-end credentials must be generated in a temporary directory;
 never add a private signing key to the repository.
