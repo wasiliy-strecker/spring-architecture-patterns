@@ -16,7 +16,8 @@ class ApplicationModulesTest {
     MODULES.verify();
 
     assertThat(MODULES.stream().map(module -> module.getIdentifier().toString()))
-        .containsExactlyInAnyOrder("intake", "inspection", "resolution", "refund", "query");
+        .containsExactlyInAnyOrder(
+            "intake", "inspection", "resolution", "refund", "query", "operations");
   }
 
   @Test

@@ -12,10 +12,10 @@ The project is intentionally a modular monolith: business capabilities are
 independently testable and protected by executable boundaries while deployment
 and operational complexity stay low.
 
-> **Current milestone — reliable refund lifecycle and CQRS view:** an approved
-> return now creates one durable refund instruction, provider acknowledgements
-> are recorded idempotently, and every workflow event contributes to a monotonic
-> read model that tolerates delayed delivery.
+> **Current milestone — secured API and operational insight:** the complete
+> workflow is available through a scope-protected OAuth 2.0 resource server,
+> while health probes, Prometheus metrics, backlog diagnostics, and bounded
+> event recovery make delivery behavior visible to operators.
 
 ## What this project demonstrates
 
@@ -30,6 +30,10 @@ and operational complexity stay low.
 - aggregate invariants plus optimistic locking for concurrent completion attempts
 - durable refund scheduling with idempotent provider acknowledgements
 - CQRS projection with event deduplication and monotonic workflow ranks
+- stateless JWT security with signature, issuer, audience, and scope validation
+- explicit transport DTOs plus RFC 9457 problem details and request correlation
+- public liveness/readiness probes and protected Prometheus diagnostics
+- bounded, audit-logged recovery for incomplete Modulith event publications
 - isolated module scenarios that verify collaboration through public events
 - deterministic unit tests plus real PostgreSQL integration tests with Testcontainers
 - generated module diagrams that cannot silently drift from the code
@@ -102,6 +106,79 @@ provider and emits `RefundCompleted`. Repeating the same provider reference is
 safe; attempting to rewrite it is rejected. The project deliberately does not
 pretend to transfer real money or hide a payment SDK behind a demo stub.
 
+## Secured HTTP boundary
+
+The inbound adapters expose four business operations. Each token needs only the
+scope required for that operation:
+
+| Method | Path | Required scope | Semantics |
+|---|---|---|---|
+| `POST` | `/api/v1/returns` | `returns:write` | Request one return and receive `201 Created` |
+| `POST` | `/api/v1/returns/{returnId}/inspection` | `returns:inspect` | Complete the warehouse inspection |
+| `PUT` | `/api/v1/returns/{returnId}/refund` | `refunds:settle` | Idempotently record the provider acknowledgement |
+| `GET` | `/api/v1/returns/{returnId}` | `returns:read` | Read the eventually consistent case view |
+
+The resource server validates an RSA signature as well as `iss`, `aud`, token
+time bounds, and scopes. Its RFC 9728 metadata is public at
+`/.well-known/oauth-protected-resource`. Authentication and authorization
+failures keep the RFC 6750 `WWW-Authenticate` header and also return a stable
+problem response:
+
+```json
+{
+  "type": "https://wasiliy-strecker.github.io/problems/insufficient-scope",
+  "title": "Insufficient scope",
+  "status": 403,
+  "detail": "The bearer token does not grant the required scope.",
+  "instance": "/api/v1/returns/6dca7023-9098-4936-9e8c-1a48082ddc13",
+  "code": "INSUFFICIENT_SCOPE",
+  "requestId": "request-401"
+}
+```
+
+Set these environment variables for an authorization server:
+
+```bash
+export JWT_PUBLIC_KEY_LOCATION=file:/run/secrets/returns-api-public-key.pem
+export JWT_ISSUER_URI=https://auth.example.com
+export JWT_AUDIENCE=returns-api
+```
+
+The repository contains only a non-secret bootstrap public key so the
+application can start without contacting an identity provider. Its private key
+is deliberately unavailable; use an authorization server and override the
+public-key location for real requests.
+
+## Operational insight and recovery
+
+`/livez`, `/readyz`, and the detailed liveness/readiness actuator paths are
+public for platform probes. Diagnostics remain protected:
+
+| Method | Path | Required scope |
+|---|---|---|
+| `GET` | `/actuator/prometheus` | `operations:read` |
+| `GET` | `/actuator/eventpublications` | `operations:read` |
+| `POST` | `/actuator/eventpublications` | `operations:manage` |
+
+The Prometheus registry exports the incomplete count, failed count, and age of
+the oldest incomplete publication. Recovery is never automatic at startup. An
+operator must request a bounded batch with a minimum age of at least 30 seconds:
+
+```bash
+curl --request POST http://localhost:8080/actuator/eventpublications \
+  --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+  --header "Content-Type: application/json" \
+  --data '{
+    "minAge": "PT5M",
+    "maxInFlight": 20,
+    "batchSize": 100
+  }'
+```
+
+The acknowledgement records how many eligible publications were observed. It
+does not claim that asynchronous handling has already succeeded; the metrics
+and read endpoint show the resulting state.
+
 ```mermaid
 sequenceDiagram
     participant I as intake
@@ -139,6 +216,7 @@ sequenceDiagram
 | `resolution` | Decide approval or rejection | Resolution events |
 | `refund` | Schedule and settle an approved refund once | API and refund events |
 | `query` | Build monotonic, read-optimized return case views | Query API |
+| `operations` | Diagnose and recover durable event delivery | Actuator endpoint and metrics |
 
 Every module owns its domain, use cases, and adapters. Other modules may use only
 explicitly exposed APIs or named event interfaces.
@@ -178,7 +256,15 @@ planned dependency direction.
    [refund aggregate](src/main/java/io/github/wasiliystrecker/returns/refund/domain/RefundPayment.java).
 5. Review the
    [monotonic JDBC projection](src/main/java/io/github/wasiliystrecker/returns/query/adapter/persistence/JdbcReturnCaseProjectionRepository.java).
-6. Finish with the
+6. Inspect the
+   [scope rules and problem responses](src/main/java/io/github/wasiliystrecker/returns/ApiSecurityConfiguration.java)
+   and one
+   [HTTP adapter](src/main/java/io/github/wasiliystrecker/returns/intake/adapter/web/ReturnIntakeController.java).
+7. Follow the guarded recovery path through the
+   [operations service](src/main/java/io/github/wasiliystrecker/returns/operations/application/EventPublicationOperationsService.java)
+   and
+   [Actuator endpoint](src/main/java/io/github/wasiliystrecker/returns/operations/adapter/actuator/EventPublicationsEndpoint.java).
+8. Finish with the
    [cross-module PostgreSQL test](src/test/java/io/github/wasiliystrecker/returns/ReturnWorkflowIT.java)
    and [delivery semantics](docs/architecture.md#delivery-semantics).
 
@@ -230,6 +316,9 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - Spring Modulith 2.1
 - PostgreSQL 18 and Flyway
 - Spring Data JPA
+- Spring Security OAuth 2.0 Resource Server
+- Spring MVC and Jakarta Bean Validation
+- Spring Boot Actuator, Micrometer, and Prometheus
 - Testcontainers 2.0
 - JUnit and AssertJ
 - ArchUnit
@@ -242,7 +331,7 @@ Flyway creates the schema and Hibernate validates that its mapping matches it.
 - [x] Return intake and PostgreSQL persistence
 - [x] Inspection and resolution modules
 - [x] Reliable refund handling and query projections
-- [ ] Secured REST API and operational insight
+- [x] Secured REST API and operational insight
 - [ ] Container packaging, end-to-end example, and first release
 
 Design choices are recorded in [docs/architecture.md](docs/architecture.md).

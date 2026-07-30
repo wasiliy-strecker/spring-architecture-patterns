@@ -9,8 +9,9 @@ do not add isolated pattern demonstrations that bypass the module boundaries.
 ## Architecture
 
 The application is a Spring Modulith with the top-level modules `intake`,
-`inspection`, `resolution`, `refund`, and `query`. Within each module, dependencies
-point inward from adapters to application services and then to the domain.
+`inspection`, `resolution`, `refund`, `query`, and `operations`. Within each
+module, dependencies point inward from adapters to application services and
+then to the domain.
 
 Domain and application code must not depend on Spring, JPA, servlet APIs, or
 another module's internal packages. Cross-module collaboration uses an exposed

@@ -24,3 +24,7 @@ and this project follows [Semantic Versioning](https://semver.org/).
 - Durable refund scheduling and idempotent provider settlement acknowledgement
 - Monotonic CQRS return-case projection with a processed-event ledger
 - Reverse-order event scenarios and full workflow-to-read-model integration coverage
+- Scope-protected OAuth 2.0 REST adapters for the complete return workflow
+- RFC 9457 problem responses, OAuth resource metadata, and request correlation
+- Health probes, Prometheus event-publication metrics, and protected diagnostics
+- Explicit bounded resubmission of incomplete events with operator audit logging
